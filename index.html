@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <title>길치를 위한 내비게이션</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body {
+            margin: 0;
+            font-family: sans-serif;
+        }
+
+        #map {
+            width: 100%;
+            height: 100vh;
+        }
+
+        #guide-overlay {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 85%;
+            padding: 20px;
+            border-radius: 15px;
+            color: white;
+            text-align: center;
+            z-index: 10;
+            font-weight: bold;
+            background: rgba(23, 31, 251, 0.7);
+        }
+
+        #start-btn {
+            position: absolute;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 15px 30px;
+            background: #23d166;
+            border: none;
+            border-radius: 30px;
+            font-weight: bold;
+            color: white;
+            cursor: pointer;
+            z-index: 20;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="guide-overlay">아래 버튼을 눌러 시작하세요! 😊</div>
+    <button id="start-btn">길 찾기 시작 (진동/음성 활성화)</button>
+    <div id="map"></div>
+
+    <!--<script src="//dapi.kakao.com/v2/maps/sdk.js?appkey=98f0f8824a53dacd88d4bdff4e621cc8"></script>-->
+    <script type="text/javascript"
+        src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=98f0f8824a53dacd88d4bdff4e621cc8"></script>
+
+
+    <script>
+        const guide = document.getElementById('guide-overlay');
+        const targetPos = new kakao.maps.LatLng(37.5615, 127.0033); // 목적지 (태극당)
+        let map, myMarker, polyline, myLocation = null;
+
+        // 1. 가이드 UI 업데이트 함수 (문구와 색상 변경)
+        function showGuide(text, color) {
+            guide.innerHTML = `<strong>"${text}"</strong>`;
+            guide.style.backgroundColor = color;
+        }
+
+        // 2. 두 지점 사이의 방위각 계산 (수학 공식)
+        function getBearing(p1, p2) {
+            const lat1 = p1.getLat() * Math.PI / 180, lat2 = p2.getLat() * Math.PI / 180;
+            const lon1 = p1.getLng() * Math.PI / 180, lon2 = p2.getLng() * Math.PI / 180;
+            const y = Math.sin(lon2 - lon1) * Math.cos(lat2);
+            const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(lon2 - lon1);
+            return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+        }
+
+        // 3. 실시간 방향 체크 및 진동/메시지 처리
+        function updateDirection(heading) {
+            if (!myLocation) return;
+
+            const targetBearing = getBearing(myLocation, targetPos);
+            const diff = (targetBearing - heading + 360) % 360;
+
+            if (diff < 25 || diff > 335) {
+                showGuide("지금 방향으로 쭉 가세요", "rgba(46, 204, 113, 0.9)");
+                if (navigator.vibrate) navigator.vibrate(200); // 정방향일 때 진동
+            } else {
+                const turn = (diff < 180) ? "오른쪽" : "왼쪽";
+                showGuide(`방향이 틀렸습니다. ${turn}으로 가세요`, "rgba(230, 126, 34, 0.9)");
+            }
+        }
+
+        // 4. 지도 및 위치 추적 시작
+        function startTracking() {
+            navigator.geolocation.watchPosition(pos => {
+                const lat = pos.coords.latitude, lon = pos.coords.longitude;
+                myLocation = new kakao.maps.LatLng(lat, lon);
+
+                if (!map) { // 지도 초기화
+                    map = new kakao.maps.Map(document.getElementById('map'), { center: myLocation, level: 3 });
+                    myMarker = new kakao.maps.Marker({ map: map });
+                    new kakao.maps.Marker({ position: targetPos, map: map, title: "목적지" });
+                    polyline = new kakao.maps.Polyline({ map: map, strokeWeight: 8, strokeColor: '#FF0000', strokeOpacity: 0.8 });
+                }
+
+                myMarker.setPosition(myLocation);
+                map.setCenter(myLocation);
+                polyline.setPath([myLocation, targetPos]);
+            });
+        }
+
+        // 5. 버튼 클릭 시 내비게이션 시작
+        document.getElementById('start-btn').addEventListener('click', function () {
+            this.style.display = 'none';
+            startTracking();
+
+            // 음성 안내
+            const speech = new SpeechSynthesisUtterance("내비게이션을 시작합니다. 진동이 울리는 방향으로 걸어가세요.");
+            window.speechSynthesis.speak(speech);
+
+            // 기기 방향 센서 작동 (iOS 대응 포함)
+            const handleOrientation = (e) => updateDirection(e.webkitCompassHeading || e.alpha);
+
+            if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+                DeviceOrientationEvent.requestPermission().then(state => {
+                    if (state === 'granted') window.addEventListener('deviceorientation', handleOrientation);
+                });
+            } else {
+                window.addEventListener('deviceorientation', handleOrientation);
+            }
+        });
+    </script>
+</body>
+
+</html>
